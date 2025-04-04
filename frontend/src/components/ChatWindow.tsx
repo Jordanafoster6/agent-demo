@@ -29,19 +29,3 @@ export const ChatWindow = (props: ChatWindowProps) => {
     </div>
   );
 };
-
-
-        // <Card sx={{ maxWidth: 400, my: 2, borderRadius: 4, boxShadow: 3 }}>
-        //   <CardMedia
-        //     component="img"
-        //     image={output}
-        //     alt="Generated design"
-        //     sx={{ borderRadius: 2 }}
-        //   />
-        // </Card>
-
-        // <Card sx={{ my: 2, p: 2, borderRadius: 4, boxShadow: 2 }}>
-        //   <CardContent>
-        //     <Typography variant="body1">{output}</Typography>
-        //   </CardContent>
-        // </Card>

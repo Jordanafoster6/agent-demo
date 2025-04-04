@@ -13,4 +13,4 @@ def create_design_context(url: str, prompt: str) -> DesignContext:
         "status": "refining",
         "original_prompt": prompt,
         "current_prompt": prompt,
-    } 
+    }

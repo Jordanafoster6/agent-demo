@@ -5,6 +5,12 @@ yarn-error.log
 yarn.lock
 package-lock.json
 
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # Build output
 dist/
 build/

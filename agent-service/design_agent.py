@@ -2,7 +2,7 @@
 from openai import AsyncOpenAI
 from agents import Agent, function_tool, RunContextWrapper
 from dotenv import load_dotenv
-from shared.context import create_design_context
+from context.design import create_design_context
 import os
 
 load_dotenv()
@@ -16,7 +16,7 @@ client = AsyncOpenAI(api_key=api_key)
 @function_tool
 async def generate_image(ctx: RunContextWrapper[dict], prompt: str) -> dict:
     """
-    Generate an image using OpenAI DALL·E 3 and return a structured design message.
+    Generate an image using OpenAI DALL·E 3 and then return a structured design message.
     """
     response = await client.images.generate(
         model="dall-e-3",
