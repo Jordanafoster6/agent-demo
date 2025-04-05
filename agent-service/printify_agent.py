@@ -1,6 +1,6 @@
 import os
 import httpx
-from typing import List
+from typing import List, Union
 from dotenv import load_dotenv
 from context.product import ProductContext
 from agents import Agent, function_tool, RunContextWrapper
@@ -14,6 +14,43 @@ if not PRINTIFY_API_KEY:
 printify_shop_id = os.getenv("PRINTIFY_SHOP_ID")
 if not printify_shop_id:
     raise ValueError("PRINTIFY_SHOP_ID is not set in .env")
+
+@function_tool
+async def select_blueprint(ctx: RunContextWrapper[dict], user_reply: str) -> dict:
+    """
+    Matches user's response to a blueprint from previous matches and saves it to product context.
+    """
+    blueprint_matches = ctx.context.get("blueprint_matches", [])
+    user_reply_lower = user_reply.strip().lower()
+
+    # Try to match by ID or fuzzy title
+    selected = None
+    for bp in blueprint_matches:
+        if user_reply_lower == str(bp["id"]):
+            selected = bp
+            break
+        if user_reply_lower in bp["title"].lower():
+            selected = bp
+            break
+
+    if not selected:
+        return {
+            "type": "chat",
+            "role": "assistant",
+            "content": "Hmm, I couldn't find that product. Please respond with the name or Blueprint ID of one of the suggestions I gave you."
+        }
+
+    # Store in context under product
+    ctx.context["product"] = {
+        "blueprint_id": selected["id"],
+        "blueprint_name": selected["title"],
+    }
+
+    return {
+        "type": "chat",
+        "role": "assistant",
+        "content": f"Great choice! You've selected: {selected['title']} (ID: {selected['id']}). Next, I'll find the best print providers for this product..."
+    }
 
 @function_tool
 async def get_matching_blueprints(ctx: RunContextWrapper[dict], prompt: str) -> dict:
@@ -53,10 +90,38 @@ async def get_matching_blueprints(ctx: RunContextWrapper[dict], prompt: str) -> 
         "content": "\n".join(content_lines)
     }
 
+@function_tool
+async def handle_printify_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
+    ctx.context["last_prompt"] = input
+    blueprint_matches = ctx.context.get("blueprint_matches", [])
+
+    # Try to parse as int (ID)
+    try:
+        blueprint_id = int(input)
+        return await select_blueprint(ctx, blueprint_id)
+    except ValueError:
+        pass
+
+    # Try to match name
+    for bp in blueprint_matches:
+        if input.strip().lower() in bp["title"].lower():
+            return await select_blueprint(ctx, input)
+
+    # If no match, assume it's a fresh product request
+    return await get_matching_blueprints(ctx, input)
+
 printify_agent = Agent(
     name="PrintifyAgent",
-    instructions="You are a Printify product creation assistant. Use tools to search blueprints, configure variants, and create products. Always confirm before finalizing.",
-    tools=[get_matching_blueprints],
+    instructions="""
+    You are the PrintifyAgent.
+
+    When a user describes a product, call `get_matching_blueprints`.
+
+    If the user replies with a name or blueprint ID from the list, call `select_blueprint`.
+
+    Never respond manually — always use tools to fetch or select blueprints.
+    """,
+    tools=[handle_printify_prompt, get_matching_blueprints, select_blueprint],
     model="gpt-4",
     tool_use_behavior="run_llm_again"
 )

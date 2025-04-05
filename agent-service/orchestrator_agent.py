@@ -6,19 +6,24 @@ from printify_agent import printify_agent
 @function_tool
 async def handle_user_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
     ctx.context["last_prompt"] = input
-
-    # TEMP LOGIC: hit PrintifyAgent when prompt is product-related
-    if any(word in input.lower() for word in ["shirt", "product", "mug", "hat", "hoodie", "create", "make"]):
-        result = await Runner.run(printify_agent, input, context=ctx.context)
-    else:
-        result = await Runner.run(design_agent, input, context=ctx.context)
+    # TODO: introduct delegation logic for using design agent later
+    result = await Runner.run(printify_agent, input, context=ctx.context)
+    # result = await Runner.run(design_agent, input, context=ctx.context)
 
     return result.final_output
 
 
 orchestrator_agent = Agent(
     name="OrchestratorAgent",
-    instructions="You are an assistant that processes user prompts. When the user requests a design, use the handle_user_prompt tool to generate it. The tool will return a structured design message. You must return this exact message as your response, not as a string or content. The message should be a dictionary with type 'design', not a string representation of a dictionary.",
+    instructions=(
+      """
+      You are the OrchestratorAgent.
+
+      You handle user prompts and delegate them to other agents. For now, all input must be sent to the PrintifyAgent.
+
+      Always call the `handle_user_prompt` tool. Do not try to answer the prompt yourself.
+      """
+    ),
     tools=[handle_user_prompt],
     model="gpt-4",
     tool_use_behavior="run_llm_again"

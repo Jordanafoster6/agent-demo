@@ -23,7 +23,7 @@ export const DesignMessageSchema = z.object({
 // All current message types
 export const AgentMessageSchema = z.discriminatedUnion("type", [
   ChatMessageSchema,
-  DesignMessageSchema,
+  // DesignMessageSchema,
 ]);
 
 export type AgentMessage = z.infer<typeof AgentMessageSchema>;

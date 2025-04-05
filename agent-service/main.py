@@ -17,42 +17,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class AgentRequest(BaseModel):
+# class AgentRequest(BaseModel):
+#     input: str
+#     sessionId: str
+#     context: Dict[str, Any] = {}
+
+class PromptRequest(BaseModel):
     input: str
     sessionId: str
     context: Dict[str, Any] = {}
 
 @app.post("/agent")
-async def run_agent(data: AgentRequest):
-    context = data.context or {}
-    result = await Runner.run(orchestrator_agent, data.input, context=context)
+async def run_agent(req: PromptRequest):
+    context = req.context or {}
+    result = await Runner.run(orchestrator_agent, req.input, context=context)
     
     # Debug logging
     print("Result type:", type(result.final_output))
     print("Result value:", result.final_output)
-    
-    # Try to parse string representation of dict if needed
-    if isinstance(result.final_output, str):
-        try:
-            import ast
-            message = ast.literal_eval(result.final_output)
-        except (SyntaxError, ValueError):
-            message = {
-                "type": "chat",
-                "role": "assistant",
-                "content": result.final_output
-            }
-    elif isinstance(result.final_output, dict):
-        message = result.final_output
-    else:
-        message = {
-            "type": "chat",
-            "role": "assistant",
-            "content": result.final_output
-        }
+
+    message = {
+      "type": "chat",
+      "role": "assistant",
+      "content": result.final_output
+    }
 
     return {
+        "sessionId": req.sessionId,
         "messages": [message],
         "context": context,
-        "sessionId": data.sessionId
     }

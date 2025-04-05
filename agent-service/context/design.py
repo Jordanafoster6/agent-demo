@@ -1,7 +1,7 @@
 from typing import TypedDict
 
 class DesignContext(TypedDict):
-    image_url: str
+    design_image_url: str
     status: str
     original_prompt: str
     current_prompt: str
@@ -9,7 +9,7 @@ class DesignContext(TypedDict):
 def create_design_context(url: str, prompt: str) -> DesignContext:
     """Create a standardized design context object."""
     return {
-        "image_url": url,
+        "design_image_url": url,
         "status": "refining",
         "original_prompt": prompt,
         "current_prompt": prompt,

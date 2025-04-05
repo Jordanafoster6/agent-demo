@@ -10,14 +10,14 @@ export const ChatWindow = (props: ChatWindowProps) => {
   return (
     <div>
       {props.messages.map((msg, idx) => {
-        if (msg.type === "design") {
-          return (
-            <div key={idx}>
-              <p>{msg.message}</p>
-              <img src={msg.imageUrl} alt="Design preview" style={{ maxWidth: '100%' }} />
-            </div>
-          );
-        }
+        // if (msg.type === "design") {
+        //   return (
+        //     <div key={idx}>
+        //       <p>{msg.message}</p>
+        //       <img src={msg.imageUrl} alt="Design preview" style={{ maxWidth: '100%' }} />
+        //     </div>
+        //   );
+        // }
 
         // Default chat rendering
         return (

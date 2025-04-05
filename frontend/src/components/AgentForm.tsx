@@ -6,7 +6,7 @@ import { ChatWindow } from './ChatWindow';
 import { ChatContext, AgentMessage } from '@shared/types';
 
 export default function AgentForm() {
-  const [input, setInput] = useState('Make a design of a smiling robot on a shirt');
+  const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -35,9 +35,17 @@ export default function AgentForm() {
         onChange={(e) => setInput(e.target.value)}
         margin="normal"
       />
-      <Button onClick={handleSubmit} variant="contained" disabled={loading}>
-        {loading ? <CircularProgress size={24} /> : 'Send'}
-      </Button>
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
+          {loading ? <CircularProgress size={24} /> : 'Send'}
+        </Button>
+        <Button onClick={() => setInput('i want a shirt with a smiling robot on it')} variant="contained">
+          Add Product
+        </Button>
+        <Button onClick={() => setInput('741')} variant="contained">
+          Choose Product
+        </Button>
+      </div>
       {messages && <ChatWindow messages={messages} />}
     </div>
   );
