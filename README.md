@@ -3,7 +3,7 @@ An AI-driven application powered by OpenAI (GPT-4o, DALL-E 3) and Printify APIs 
 
 The agent microservice is a FastAPI-based application designed to handle user interactions with Printify’s product catalog via an AI-driven conversational agent. It uses a modular architecture with a central orchestrator agent (`orchestrator_agent.py`) along with a design agent (`design_agent.py`) using DALL-E to generate artwork from user descriptions for a product, and a specialized Printify agent (`printify_agent.py`) to manage product-related tasks. The system integrates with the OpenAI API using DALL-E to generate artwork from user descriptions later used for product creation in Printify, and the Printify API to fetch blueprints, print providers, and variants, and finally product creation leveraging tools and context management to maintain state across requests. The microservice processes user inputs through a single /agent endpoint, orchestrates tool calls, and returns structured responses to a frontend client.
 
-### Backend Setup
+## Backend Setup
 - Install Deps: `npm i`
 - Startup Backend: `npx ts-node-dev --respawn --require tsconfig-paths/register src/index.ts`
 
@@ -11,7 +11,7 @@ The agent microservice is a FastAPI-based application designed to handle user in
 - Install deps: `npm i`
 - Startup frontend: `npm start`
 
-### Agent Service Setup
+## Agent Service Setup
 You'll need to set up a Python virtual environment (venv) with the required dependencies:
 
 1. Install Python with Homebrew
