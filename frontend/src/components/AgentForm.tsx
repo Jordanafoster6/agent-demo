@@ -36,14 +36,17 @@ export default function AgentForm() {
         margin="normal"
       />
       <div style={{ display: 'flex', gap: '10px' }}>
-        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
+        <Button size="small" onClick={handleSubmit} variant="contained" disabled={loading}>
           {loading ? <CircularProgress size={24} /> : 'Send'}
         </Button>
-        <Button onClick={() => setInput('i want a shirt with a smiling robot on it')} variant="contained">
+        <Button size="small" onClick={() => setInput('I want a coffee mug')} variant="contained">
           Add Product
         </Button>
-        <Button onClick={() => setInput('741')} variant="contained">
+        <Button size="small" onClick={() => setInput('Select blueprint 1')} variant="contained">
           Choose Product
+        </Button>
+        <Button size="small" onClick={() => setInput('Select print provider 1')} variant="contained">
+          Choose Provider
         </Button>
       </div>
       {messages && <ChatWindow messages={messages} />}

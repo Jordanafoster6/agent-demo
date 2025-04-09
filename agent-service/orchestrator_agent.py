@@ -3,31 +3,56 @@ from agents.run_context import RunContextWrapper
 from design_agent import design_agent
 from printify_agent import printify_agent
 
+# Existing tool for design prompts
 @function_tool
 async def handle_user_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
+    """Delegates design-related prompts to the design agent."""
     ctx.context["last_prompt"] = input
-    # TODO: introduct delegation logic for using design agent later
-    result = await Runner.run(printify_agent, input, context=ctx.context)
-    # result = await Runner.run(design_agent, input, context=ctx.context)
-
+    result = await Runner.run(design_agent, input, context=ctx.context)
     return result.final_output
 
+# New tool for Printify prompts
+@function_tool
+async def handle_printify_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
+    """Routes Printify-related prompts to the Printify Product Agent."""
+    ctx.context["last_prompt"] = input
+    result = await Runner.run(printify_agent, input, context=ctx.context)
+    return result.final_output
 
+# Updated orchestrator agent
 orchestrator_agent = Agent(
     name="OrchestratorAgent",
-    instructions=(
-      """
-      You are the OrchestratorAgent.
-
-      You handle user prompts and delegate them to other agents. For now, all input must be sent to the PrintifyAgent.
-
-      Always call the `handle_user_prompt` tool. Do not try to answer the prompt yourself.
-      """
-    ),
-    tools=[handle_user_prompt],
-    model="gpt-4",
+    instructions="You are an assistant that processes user prompts. Use handle_user_prompt for design requests. Use handle_printify_prompt for Printify product, blueprint, or store-related requests. Return tool outputs as-is.",
+    tools=[handle_user_prompt, handle_printify_prompt],
+    model="gpt-4",  # Adjust model as per your setup
     tool_use_behavior="run_llm_again"
 )
+
+# @function_tool
+# async def handle_user_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
+#     ctx.context["last_prompt"] = input
+#     # TODO: introduct delegation logic for using design agent later
+#     result = await Runner.run(printify_agent, input, context=ctx.context)
+#     # result = await Runner.run(design_agent, input, context=ctx.context)
+
+#     return result.final_output
+
+
+# orchestrator_agent = Agent(
+#     name="OrchestratorAgent",
+#     instructions=(
+#       """
+#       You are the OrchestratorAgent.
+
+#       You handle user prompts and delegate them to other agents. For now, all input must be sent to the PrintifyAgent.
+
+#       Always call the `handle_user_prompt` tool. Do not try to answer the prompt yourself.
+#       """
+#     ),
+#     tools=[handle_user_prompt],
+#     model="gpt-4",
+#     tool_use_behavior="run_llm_again"
+# )
 
 
 # ------------------------------------------------------------

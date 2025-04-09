@@ -20,10 +20,19 @@ export const DesignMessageSchema = z.object({
   currentPrompt: z.string(),
 });
 
+export const PrintifyMessageSchema = z.object({
+  type: z.literal("printify"),
+  message: z.string(),
+  blueprints: z.array(z.string()).optional(),
+  printProviders: z.array(z.string()).optional(),
+  variants: z.array(z.string()).optional(),
+});
+
 // All current message types
 export const AgentMessageSchema = z.discriminatedUnion("type", [
   ChatMessageSchema,
-  // DesignMessageSchema,
+  DesignMessageSchema,
+  PrintifyMessageSchema,
 ]);
 
 export type AgentMessage = z.infer<typeof AgentMessageSchema>;
