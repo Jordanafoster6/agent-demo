@@ -2,6 +2,8 @@ import os
 import requests
 from dotenv import load_dotenv
 from agents import Agent, function_tool, RunContextWrapper
+from tenacity import retry, stop_after_attempt, wait_exponential
+from cachetools import TTLCache
 
 load_dotenv()
 
@@ -13,371 +15,225 @@ printify_shop_id = os.getenv("PRINTIFY_SHOP_ID")
 if not printify_shop_id:
     raise ValueError("PRINTIFY_SHOP_ID is not set in .env")
 
-@function_tool
-async def select_variants(ctx: RunContextWrapper[dict], selection: str) -> dict:
-    """
-    Handles the user's variant selection and stores it in the context.
-    """
-    print("select_variants called with selection:", selection)  # Log tool invocation
-    if not ctx.context.get("awaiting_variant_selection", False):
-      return {
-        "type": "printify",
-        "message": "No variant selection is currently awaited."
-      }
-    
-    try:
-      index = int(selection.split()[-1]) - 1  # Extract number from "Select variant X"
-      selected_variant = ctx.context["variants_list"][index]
-      ctx.context["selected_variant"] = selected_variant
-      ctx.context["awaiting_variant_selection"] = False
-      return {
-        "type": "printify",
-        "message": f"You have selected variant: {selected_variant['title']}"
-      }
-    except (IndexError, ValueError):
-      return {
-        "type": "printify",
-        "message": "Invalid selection. Please try again with a valid number."
-      }
+# Cache for blueprints (1-hour TTL)
+blueprints_cache = TTLCache(maxsize=1, ttl=3600)
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def fetch_printify_data(url: str, headers: dict) -> dict:
+    """Fetch data from Printify API with retry logic."""
+    response = requests.get(url, headers=headers)
+    if response.status_code == 429:
+        raise Exception("Rate limit exceeded")
+    response.raise_for_status()
+    return response.json()
+
+def summarize_list(items: list, key: str, max_items: int = 5) -> str:
+    """Summarize a list for token efficiency."""
+    if len(items) > max_items:
+        return f"{len(items)} items available. First {max_items}: " + ", ".join(item[key] for item in items[:max_items])
+    return ", ".join(item[key] for item in items)
 
 @function_tool
-async def get_variants(ctx: RunContextWrapper[dict]) -> dict:
+async def select_variants(context: RunContextWrapper[dict], selection: str) -> dict:
+    """
+    Handles the user's variant selection and stores it in the context.
+    
+    Args:
+        context: The run context wrapper.
+        selection: User input for variant selection.
+    
+    Returns:
+        Dict with type 'printify' and selection result.
+    """
+    print("select_variants called with selection:", selection)
+    if not context.context.get("awaiting_variant_selection", False):
+        return {"type": "printify", "message": "No variant selection is currently awaited."}
+    
+    try:
+        index = int(selection.split()[-1]) - 1
+        selected_variant = context.context["variants_list"][index]
+        context.context["selected_variant"] = selected_variant
+        context.context["awaiting_variant_selection"] = False
+        return {"type": "printify", "message": f"You have selected variant: {selected_variant['title']}"}
+    except (IndexError, ValueError):
+        return {"type": "printify", "message": "Invalid selection. Please try again with a valid number."}
+
+@function_tool
+async def get_variants(context: RunContextWrapper[dict]) -> dict:
     """
     Fetches variants for the selected blueprint and print provider from the context.
-    """
-    print("get_variants called with ctx")  # Log tool invocation
-    if "selected_blueprint" not in ctx.context or "selected_print_provider" not in ctx.context:
-      return {
-        "type": "printify",
-        "message": "Please select a blueprint and print provider first."
-      }
     
-    blueprint_id = ctx.context["selected_blueprint"]["id"]
-    print_provider_id = ctx.context["selected_print_provider"]["id"]
-    print("get_variants called with blueprint_id:", blueprint_id, "and print_provider_id:", print_provider_id)  # Log tool invocation
+    Args:
+        context: The run context wrapper.
+    
+    Returns:
+        Dict with type 'printify' and variant options.
+    """
+    print("get_variants called with context")
+    if "selected_blueprint" not in context.context or "selected_print_provider" not in context.context:
+        return {"type": "printify", "message": "Please select a blueprint and print provider first."}
+    
+    blueprint_id = context.context["selected_blueprint"]["id"]
+    print_provider_id = context.context["selected_print_provider"]["id"]
     url = f"https://api.printify.com/v1/catalog/blueprints/{blueprint_id}/print_providers/{print_provider_id}/variants.json"
     headers = {"Authorization": f"Bearer {PRINTIFY_API_KEY}"}
     try:
-      response = requests.get(url, headers=headers)
-      response.raise_for_status()
-      variants = response.json()
-      variant_names = [v["title"] for v in variants]
-      ctx.context["variants_list"] = variants
-      ctx.context["awaiting_variant_selection"] = True
-      selection_message = (
-        "Here are the available variants:\n" +
-        "\n".join([f"{i+1}. {v}" for i, v in enumerate(variant_names)]) +
-        "\nPlease select one by saying 'Select variant X' where X is the number."
-      )
-      return {
-        "type": "printify",                                                                                                                                                                     
-        "message": selection_message,
-        "variants": variant_names
-      }
-    except requests.RequestException as e:
-      return {
-        "type": "printify",
-        "message": f"Failed to fetch variants: {str(e)}"
-      }
+        variants = fetch_printify_data(url, headers)
+        variant_names = [v["title"] for v in variants]
+        context.context["variants_list"] = variants
+        context.context["awaiting_variant_selection"] = True
+        selection_message = (
+            "Here are the available variants:\n" +
+            "\n".join([f"{i+1}. {v}" for i, v in enumerate(variant_names)]) +
+            "\nPlease select one by saying 'Select variant X' where X is the number."
+        )
+        return {"type": "printify", "message": selection_message, "variants": variant_names}
+    except Exception as e:
+        return {"type": "printify", "message": f"Failed to fetch variants: {str(e)}"}
     
 @function_tool
-async def select_print_provider(ctx: RunContextWrapper[dict], selection: str) -> dict:
+async def select_print_provider(context: RunContextWrapper[dict], selection: str) -> dict:
     """
     Handles the user's print provider selection and stores it in the context.
+    
+    Args:
+        context: The run context wrapper.
+        selection: User input for print provider selection.
+    
+    Returns:
+        Dict with type 'printify' and selection result.
     """
-    print("select_print_provider called with selection:", selection)  # Log tool invocation
-    if not ctx.context.get("awaiting_print_provider_selection", False):
-      return {
-        "type": "printify",
-        "message": "No print provider selection is currently awaited."
-      }
+    print("select_print_provider called with selection:", selection)
+    if not context.context.get("awaiting_print_provider_selection", False):
+        return {"type": "printify", "message": "No print provider selection is currently awaited."}
     
     try:
-      index = int(selection.split()[-1]) - 1  # Extract number from "Select print provider X"
-      selected_pp = ctx.context["print_providers_list"][index]
-      ctx.context["selected_print_provider"] = selected_pp
-      ctx.context["awaiting_print_provider_selection"] = False
-      return {
-        "type": "printify",
-        "message": f"You have selected print provider: {selected_pp['title']}"
-      }
+        index = int(selection.split()[-1]) - 1
+        selected_pp = context.context["print_providers_list"][index]
+        context.context["selected_print_provider"] = selected_pp
+        context.context["awaiting_print_provider_selection"] = False
+        return {"type": "printify", "message": f"You have selected print provider: {selected_pp['title']}"}
     except (IndexError, ValueError):
-      return {
-        "type": "printify",
-        "message": "Invalid selection. Please try again with a valid number."
-      }
+        return {"type": "printify", "message": "Invalid selection. Please try again with a valid number."}
     
 @function_tool
-async def get_print_providers(ctx: RunContextWrapper[dict]) -> dict:
+async def get_print_providers(context: RunContextWrapper[dict]) -> dict:
     """
     Fetches print providers for the selected blueprint from the context.
-    """
-    print("get_print_providers called with ctx")  # Log tool invocation
-    if "selected_blueprint" not in ctx.context:
-      return {
-        "type": "printify",
-        "message": "No blueprint selected. Please select a blueprint first."
-      }
     
-    blueprint_id = ctx.context["selected_blueprint"]["id"]
+    Args:
+        context: The run context wrapper.
+    
+    Returns:
+        Dict with type 'printify' and print provider options.
+    """
+    print("get_print_providers called with context")
+    if "selected_blueprint" not in context.context:
+        return {"type": "printify", "message": "No blueprint selected. Please select a blueprint first."}
+    
+    blueprint_id = context.context["selected_blueprint"]["id"]
     url = f"https://api.printify.com/v1/catalog/blueprints/{blueprint_id}/print_providers.json"
     headers = {"Authorization": f"Bearer {PRINTIFY_API_KEY}"}
     try:
-      response = requests.get(url, headers=headers)
-      response.raise_for_status()
-      print_providers = response.json()
-      print_provider_names = [pp["title"] for pp in print_providers]
-      # Store the full list in context for selection
-      ctx.context["print_providers_list"] = print_providers
-      ctx.context["awaiting_print_provider_selection"] = True
-      selection_message = (
-        "Here are the available print providers:\n" +
-        "\n".join([f"{i+1}. {pp}" for i, pp in enumerate(print_provider_names)]) +
-        "\nPlease select one by saying 'Select print provider X' where X is the number."
-      )
-      return {
-        "type": "printify",
-        "message": selection_message,
-        "printProviders": print_provider_names
-      }
-    except requests.RequestException as e:
-      return {
-        "type": "printify",
-        "message": f"Failed to fetch print providers: {str(e)}"
-      }
+        print_providers = fetch_printify_data(url, headers)
+        print_provider_names = [pp["title"] for pp in print_providers]
+        context.context["print_providers_list"] = print_providers
+        context.context["awaiting_print_provider_selection"] = True
+        selection_message = (
+            "Here are the available print providers:\n" +
+            "\n".join([f"{i+1}. {pp}" for i, pp in enumerate(print_provider_names)]) +
+            "\nPlease select one by saying 'Select print provider X' where X is the number."
+        )
+        return {"type": "printify", "message": selection_message, "printProviders": print_provider_names}
+    except Exception as e:
+        return {"type": "printify", "message": f"Failed to fetch print providers: {str(e)}"}
     
 @function_tool
-async def select_blueprint(ctx: RunContextWrapper[dict], selection: str) -> dict:
+async def select_blueprint(context: RunContextWrapper[dict], selection: str) -> dict:
     """
     Handles the user's blueprint selection and stores it in the context.
+    
+    Args:
+        context: The run context wrapper.
+        selection: User input for blueprint selection.
+    
+    Returns:
+        Dict with type 'printify' and selection result.
     """
-    print("select_blueprint called with selection:", selection)  # Log tool invocation
-    if ctx.context.get("awaiting_selection", False):
-      try:
-        # Extract the number from the prompt, e.g., "Select blueprint 1"
+    print("select_blueprint called with selection:", selection)
+    if not context.context.get("awaiting_selection", False):
+        return {"type": "printify", "message": "No selection is currently awaited."}
+    
+    try:
         index = int(selection.split()[-1]) - 1
-        selected_bp = ctx.context["blueprints_list"][index]
-        ctx.context["selected_blueprint"] = selected_bp
-        ctx.context["awaiting_selection"] = False
-        print("Selected blueprint:", selected_bp["title"])  # Debug
-        # Trigger next step explicitly if needed
-        # return await get_print_providers(ctx)  # Chain to print providers
-        return {
-          "type": "printify",
-          "message": f"You have selected: {selected_bp['title']}"
-        }
-      except (IndexError, ValueError):
-        return {
-          "type": "printify",
-          "message": "Invalid selection. Please try again."
-        }
-    else:
-      return {
-        "type": "printify",
-        "message": "No selection is currently awaited."
-      }
-@function_tool
-async def get_blueprints(ctx: RunContextWrapper[dict], prompt: str) -> dict:
-  """
-  Fetches Printify blueprints, filters them based on the prompt, and prepares for selection.
-  """
-  print("get_blueprints called with prompt:", prompt)  # Log tool invocation
-  url = "https://api.printify.com/v1/catalog/blueprints.json"
-  headers = {"Authorization": f"Bearer {PRINTIFY_API_KEY}"}
-  try:
-      response = requests.get(url, headers=headers)
-      response.raise_for_status()  # Raises exception for 4xx/5xx errors
-      blueprints = response.json()
-      num_blueprints = len(blueprints)
-      print("Number of blueprints:", num_blueprints)
-      sample_blueprint = [bp for bp in blueprints[:1]]
-      # print("Sample blueprints:", sample_blueprint)
-      # Extract keywords from prompt (simple split for now)
-      keywords = prompt.lower().split()
-      matched_blueprints = [
-        bp for bp in blueprints
-        if any(kw in bp["title"].lower() for kw in keywords)
-      ]
-      print("Number of matched blueprints:", len(matched_blueprints))
-      if matched_blueprints:
-        # Store the list in context for later selection
-        ctx.context["blueprints_list"] = matched_blueprints
-        ctx.context["awaiting_selection"] = True
-        blueprint_names = [bp["title"] for bp in matched_blueprints]
-        selection_message = "Here are the matching blueprints:\n" + "\n".join(
-          [f"{i+1}. {bp}" for i, bp in enumerate(blueprint_names)]
-        ) + "\nPlease select one by saying 'Select blueprint X' where X is the number."
-        return {
-          "type": "printify",
-          "message": selection_message,
-          "blueprints": blueprint_names
-        }
-      return {
-          "type": "printify",
-          "message": "No matching blueprints found"
-      }
-  except requests.RequestException as e:
-      print("API call failed:", str(e))  # Log the error
-      return {
-          "type": "printify",
-          "message": f"Failed to fetch blueprints: {str(e)}"
-      }
+        selected_bp = context.context["blueprints_list"][index]
+        context.context["selected_blueprint"] = selected_bp
+        context.context["awaiting_selection"] = False
+        return {"type": "printify", "message": f"You have selected: {selected_bp['title']}"}
+    except (IndexError, ValueError):
+        return {"type": "printify", "message": "Invalid selection. Please try again."}
 
-# Define the Printify Product Agent
+@function_tool
+async def get_blueprints(context: RunContextWrapper[dict], prompt: str) -> dict:
+    """
+    Fetches Printify blueprints, filters them based on the prompt, and prepares for selection.
+    
+    Args:
+        context: The run context wrapper.
+        prompt: User input to filter blueprints.
+    
+    Returns:
+        Dict with type 'printify' and blueprint options.
+    """
+    print("get_blueprints called with prompt:", prompt)
+    url = "https://api.printify.com/v1/catalog/blueprints.json"
+    headers = {"Authorization": f"Bearer {PRINTIFY_API_KEY}"}
+    try:
+        # Use cached data if available
+        if "blueprints" not in blueprints_cache:
+            blueprints_cache["blueprints"] = fetch_printify_data(url, headers)
+        blueprints = blueprints_cache["blueprints"]
+        
+        # TODO: Improve description to matching catalog blueprints
+        keywords = prompt.lower().split()
+        matched_blueprints = [bp for bp in blueprints if any(kw in bp["title"].lower() for kw in keywords)]
+
+        if not matched_blueprints:
+            return {"type": "printify", "message": "No matching blueprints found"}
+        
+        context.context["blueprints_list"] = matched_blueprints
+        context.context["awaiting_selection"] = True
+        blueprint_names = [bp["title"] for bp in matched_blueprints]
+        selection_message = (
+            "Here are the matching blueprints:\n" +
+            "\n".join([f"{i+1}. {bp}" for i, bp in enumerate(blueprint_names)]) +
+            "\nPlease select one by saying 'Select blueprint X' where X is the number."
+        )
+        return {"type": "printify", "message": selection_message, "blueprints": blueprint_names}
+    except Exception as e:
+        print("API call failed:", str(e))
+        return {"type": "printify", "message": f"Failed to fetch blueprints: {str(e)}"}
+
 printify_agent = Agent(
     name="PrintifyProductAgent",
     instructions=(
-      """
-      You are a Printify assistant. Follow these steps:
+        """
+        You are a Printify assistant. Follow these steps strictly:
 
-      - When the user asks for products or blueprints (e.g., "I want a coffee mug"), use get_blueprints and return its result directly as a dictionary with 'type': 'printify'.
-      - When the user says "Select blueprint X", use select_blueprint and return its result directly.
-      - After a blueprint is selected, use get_print_providers and return its result directly.
-      - When the user says "Select print provider Y", use select_print_provider and return its result directly.
-      - After a print provider is selected, use get_variants and return its result directly.
-      - When the user says "Select variant Z", use select_variants and return its result directly.
+        1. When the user asks for products or blueprints (e.g., "I want a coffee mug"), use get_blueprints and return its result directly.
+        2. Wait for the user to say "Select blueprint X". Then use select_blueprint and return its result directly.
+        3. After a blueprint is selected, use get_print_providers and return its result directly.
+        4. Wait for the user to say "Select print provider Y". Then use select_print_provider and return its result directly.
+        5. After a print provider is selected, use get_variants and return its result directly.
+        6. Wait for the user to say "Select variant Z". Then use select_variants and return its result directly.
 
-      Do not rephrase or convert tool outputs into plain text. Return them as-is with "type": "printify".
-      """
+        Do not call any tool unless the user has provided the necessary input as specified. Do not rephrase tool outputs. Return them as-is with "type": "printify".
+        """
     ),
     tools=[get_blueprints, select_blueprint, get_print_providers, select_print_provider, get_variants, select_variants],
     model="gpt-4",
     tool_use_behavior="run_llm_again"
 )
-
-# @function_tool
-# async def get_print_providers(ctx: RunContextWrapper[dict]) -> dict:
-#     blueprint = ctx.context.get("selected_blueprint")
-#     if not blueprint:
-#         raise ValueError("No blueprint selected.")
-
-#     headers = {"Authorization": f"Bearer {PRINTIFY_API_KEY}"}
-#     async with httpx.AsyncClient() as client:
-#         res = await client.get(
-#             f"https://api.printify.com/v1/catalog/blueprints/{blueprint['id']}/print_providers.json",
-#             headers=headers
-#         )
-#         res.raise_for_status()
-#         providers = res.json()
-
-#     ctx.context["providers"] = providers
-#     return {
-#         "type": "chat",
-#         "role": "assistant",
-#         "content": f"Here are the available print providers for {blueprint['title']}:\n" +
-#                    "\n".join(f"• {p['title']} (ID: {p['id']})" for p in providers)
-#     }
-
-# @function_tool
-# async def select_blueprint(ctx: RunContextWrapper[dict], user_reply: str) -> dict:
-#     """
-#     Matches user's response to a blueprint from previous matches and saves it to product context.
-#     """
-#     blueprint_matches = ctx.context.get("blueprint_matches", [])
-#     user_reply_lower = user_reply.strip().lower()
-
-#     # Try to match by ID or fuzzy title
-#     selected = None
-#     for bp in blueprint_matches:
-#         if user_reply_lower == str(bp["id"]):
-#             selected = bp
-#             break
-#         if user_reply_lower in bp["title"].lower():
-#             selected = bp
-#             break
-
-#     if not selected:
-#         return {
-#             "type": "chat",
-#             "role": "assistant",
-#             "content": "Hmm, I couldn't find that product. Please respond with the name or Blueprint ID of one of the suggestions I gave you."
-#         }
-
-#     # Store in context under product
-#     ctx.context["product"] = {
-#         "blueprint_id": selected["id"],
-#         "blueprint_name": selected["title"],
-#     }
-
-#     return {
-#         "type": "chat",
-#         "role": "assistant",
-#         "content": f"Great choice! You've selected: {selected['title']} (ID: {selected['id']}). Next, I'll find the best print providers for this product..."
-#     }
-
-# @function_tool
-# async def get_matching_blueprints(ctx: RunContextWrapper[dict], prompt: str) -> dict:
-#     """
-#     Fetch Printify blueprints and match against the user prompt to suggest products.
-#     """
-#     # Step 1: Fetch blueprints
-#     headers = {"Authorization": f"Bearer {PRINTIFY_API_KEY}"}
-#     async with httpx.AsyncClient() as client:
-#         res = await client.get("https://api.printify.com/v1/catalog/blueprints.json", headers=headers)
-#         res.raise_for_status()
-#         blueprints = res.json()
-
-#     # Step 2: Match based on simple fuzzy matching against title
-#     prompt_lower = prompt.lower()
-#     matches = [
-#         bp for bp in blueprints
-#         if any(keyword in prompt_lower for keyword in bp["title"].lower().split())
-#     ]
-
-#     # Step 3: Sort matches (basic heuristic: by match count)
-#     ranked_matches = sorted(matches, key=lambda b: sum(kw in prompt_lower for kw in b["title"].lower().split()), reverse=True)
-#     top_matches = ranked_matches[:5]
-
-#     # Step 4: Store in context for follow-ups
-#     ctx.context["blueprint_matches"] = top_matches  # not typed, short-lived cache
-
-#     # Step 5: Build structured message
-#     content_lines = ["Based on your description, I found these product options:\n"]
-#     for bp in top_matches:
-#         content_lines.append(f"• {bp['title']} (Blueprint ID: {bp['id']})")
-
-#     content_lines.append("\nWhich one of these would you like to use? You can reply with the name or Blueprint ID.")
-#     return {
-#         "type": "chat",
-#         "role": "assistant",
-#         "content": "\n".join(content_lines)
-#     }
-
-# @function_tool
-# async def handle_printify_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
-#     ctx.context["last_prompt"] = input
-#     blueprint_matches = ctx.context.get("blueprint_matches", [])
-
-#     # Try to parse as int (ID)
-#     try:
-#         blueprint_id = int(input)
-#         return await select_blueprint(ctx, blueprint_id)
-#     except ValueError:
-#         pass
-
-#     # Try to match name
-#     for bp in blueprint_matches:
-#         if input.strip().lower() in bp["title"].lower():
-#             return await select_blueprint(ctx, input)
-
-#     # If no match, assume it's a fresh product request
-#     return await get_matching_blueprints(ctx, input)
-
-# printify_agent = Agent(
-#     name="PrintifyAgent",
-#     instructions="""
-#     You are the PrintifyAgent.
-
-#     When a user describes a product, call `get_matching_blueprints`.
-
-#     If the user replies with a name or blueprint ID from the list, call `select_blueprint`.
-
-#     Never respond manually — always use tools to fetch or select blueprints.
-#     """,
-#     tools=[handle_printify_prompt, get_matching_blueprints, select_blueprint],
-#     model="gpt-4",
-#     tool_use_behavior="run_llm_again"
-# )
 
 
 # ------------------------------------------------------------
@@ -395,28 +251,3 @@ printify_agent = Agent(
 # - Use OpenAI function calling or embeddings for better semantic matches
 # - Cache the blueprint catalog (it doesn’t change often)
 # - Filter out non-physical products or kids' stuff
-
-
-# ------------------------------------------------------------
-#  Old Working Base Agent
-# ------------------------------------------------------------
-
-# @function_tool
-# async def mock_printify_response(ctx: RunContextWrapper[dict], prompt: str) -> dict:
-#     """
-#     Mock tool to simulate initial Printify response for blueprint matching.
-#     """
-#     product = ctx.context.get("product", {}) 
-#     # For now, this is just a placeholder to prove routing is working
-#     return {
-#         "type": "chat",
-#         "role": "assistant",
-#         "content": f"(PrintifyAgent) You said: '{prompt}'. Blueprint selection coming soon."
-#     }
-# printify_agent = Agent(
-#     name="PrintifyAgent",
-#     instructions="You are a Printify product creation assistant. Use tools to search for blueprints, select variants, and create products.",
-#     tools=[mock_printify_response],
-#     model="gpt-4",
-#     tool_use_behavior="run_llm_again"
-# )

@@ -3,86 +3,39 @@ from agents.run_context import RunContextWrapper
 from design_agent import design_agent
 from printify_agent import printify_agent
 
-# Existing tool for design prompts
 @function_tool
-async def handle_user_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
+async def handle_user_prompt(context: RunContextWrapper[dict], input: str) -> dict:
     """Delegates design-related prompts to the design agent."""
-    ctx.context["last_prompt"] = input
-    result = await Runner.run(design_agent, input, context=ctx.context)
+    context.context["last_prompt"] = input
+    result = await Runner.run(design_agent, input, context=context.context)
     return result.final_output
 
-# New tool for Printify prompts
 @function_tool
-async def handle_printify_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
+async def handle_printify_prompt(context: RunContextWrapper[dict], input: str) -> dict:
     """Routes Printify-related prompts to the Printify Product Agent."""
-    ctx.context["last_prompt"] = input
-    result = await Runner.run(printify_agent, input, context=ctx.context)
+    context.context["last_prompt"] = input
+    result = await Runner.run(printify_agent, input, context=context.context)
     return result.final_output
 
-# Updated orchestrator agent
 orchestrator_agent = Agent(
     name="OrchestratorAgent",
-    instructions="You are an assistant that processes user prompts. Use handle_user_prompt for design requests. Use handle_printify_prompt for Printify product, blueprint, or store-related requests. Return tool outputs as-is.",
+    instructions=(
+        """
+        You are an assistant that processes user prompts.
+        - Use handle_user_prompt for design requests (e.g., "Create an image of a cat").
+        - Use handle_printify_prompt for Printify product, blueprint, or store-related requests (e.g., "I want a coffee mug").
+        Return tool outputs as-is without modification.
+        """
+    ),
     tools=[handle_user_prompt, handle_printify_prompt],
-    model="gpt-4",  # Adjust model as per your setup
+    model="gpt-4",
     tool_use_behavior="run_llm_again"
 )
-
-# @function_tool
-# async def handle_user_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
-#     ctx.context["last_prompt"] = input
-#     # TODO: introduct delegation logic for using design agent later
-#     result = await Runner.run(printify_agent, input, context=ctx.context)
-#     # result = await Runner.run(design_agent, input, context=ctx.context)
-
-#     return result.final_output
-
-
-# orchestrator_agent = Agent(
-#     name="OrchestratorAgent",
-#     instructions=(
-#       """
-#       You are the OrchestratorAgent.
-
-#       You handle user prompts and delegate them to other agents. For now, all input must be sent to the PrintifyAgent.
-
-#       Always call the `handle_user_prompt` tool. Do not try to answer the prompt yourself.
-#       """
-#     ),
-#     tools=[handle_user_prompt],
-#     model="gpt-4",
-#     tool_use_behavior="run_llm_again"
-# )
 
 
 # ------------------------------------------------------------
 #  Improvements
 # ------------------------------------------------------------
 
-# Future Tools:
-# - Add tool to fetch product details from Printify
-# - Add tool to create product in Printify
-# - Add tool to update product in Printify
-# - Add tool to delete product in Printify
-# - Add tool to list products in Printify
-
-# Future Enhancements:
-# - Later this (handle_user_prompt) will become LLM classification logic, but for now this is totally serviceable.
-
-
-# ------------------------------------------------------------
-#  Old Working Base Tool
-# ------------------------------------------------------------
-
-# @function_tool
-# async def handle_user_prompt(ctx: RunContextWrapper[dict], input: str) -> dict:
-#     """
-#     Orchestrator tool that delegates prompt to the design agent.
-#     Expects and returns a structured design message.
-#     """
-#     ctx.context["last_prompt"] = input
-
-#     result = await Runner.run(design_agent, input, context=ctx.context)
-
-#     # The design agent already sets the context, so we don't need to set it again
-#     return result.final_output
+# Introduce delegation logic for using design agent vs printify agent
+# Update (handle_user_prompt) from being serviceable to LLM classification logic
