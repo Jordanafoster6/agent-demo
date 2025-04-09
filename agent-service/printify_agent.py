@@ -251,3 +251,4 @@ printify_agent = Agent(
 # - Use OpenAI function calling or embeddings for better semantic matches
 # - Cache the blueprint catalog (it doesn’t change often)
 # - Filter out non-physical products or kids' stuff
+# - Improve description to matching catalog blueprints
