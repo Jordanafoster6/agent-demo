@@ -82,10 +82,11 @@ async def get_variants(context: RunContextWrapper[dict]) -> dict:
         variant_names = [v["title"] for v in variants]
         context.context["variants_list"] = variants
         context.context["awaiting_variant_selection"] = True
+        # Use summarize_list to create a concise message
+        summarized_message = summarize_list(variants, "title")
         selection_message = (
-            "Here are the available variants:\n" +
-            "\n".join([f"{i+1}. {v}" for i, v in enumerate(variant_names)]) +
-            "\nPlease select one by saying 'Select variant X' where X is the number."
+            f"Here are the available variants:\n{summarized_message}\n"
+            "Please select one by saying 'Select variant X' where X is the number."
         )
         return {"type": "printify", "message": selection_message, "variants": variant_names}
     except Exception as e:
@@ -139,10 +140,11 @@ async def get_print_providers(context: RunContextWrapper[dict]) -> dict:
         print_provider_names = [pp["title"] for pp in print_providers]
         context.context["print_providers_list"] = print_providers
         context.context["awaiting_print_provider_selection"] = True
+        # Use summarize_list to create a concise message
+        summarized_message = summarize_list(print_providers, "title")
         selection_message = (
-            "Here are the available print providers:\n" +
-            "\n".join([f"{i+1}. {pp}" for i, pp in enumerate(print_provider_names)]) +
-            "\nPlease select one by saying 'Select print provider X' where X is the number."
+            f"Here are the available print providers:\n{summarized_message}\n"
+            "Please select one by saying 'Select print provider X' where X is the number."
         )
         return {"type": "printify", "message": selection_message, "printProviders": print_provider_names}
     except Exception as e:
@@ -204,10 +206,12 @@ async def get_blueprints(context: RunContextWrapper[dict], prompt: str) -> dict:
         context.context["blueprints_list"] = matched_blueprints
         context.context["awaiting_selection"] = True
         blueprint_names = [bp["title"] for bp in matched_blueprints]
+
+        # Use summarize_list to create a concise message
+        summarized_message = summarize_list(matched_blueprints, "title")
         selection_message = (
-            "Here are the matching blueprints:\n" +
-            "\n".join([f"{i+1}. {bp}" for i, bp in enumerate(blueprint_names)]) +
-            "\nPlease select one by saying 'Select blueprint X' where X is the number."
+            f"Here are the matching blueprints:\n{summarized_message}\n"
+            "Please select one by saying 'Select blueprint X' where X is the number."
         )
         return {"type": "printify", "message": selection_message, "blueprints": blueprint_names}
     except Exception as e:

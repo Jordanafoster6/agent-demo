@@ -39,7 +39,7 @@ export default function AgentForm() {
         <Button size="small" onClick={handleSubmit} variant="contained" disabled={loading}>
           {loading ? <CircularProgress size={24} /> : 'Send'}
         </Button>
-        <Button size="small" onClick={() => setInput('I want a coffee mug')} variant="contained">
+        <Button size="small" onClick={() => setInput('I want a can cooler')} variant="contained">
           Add Product
         </Button>
         <Button size="small" onClick={() => setInput('Select blueprint 1')} variant="contained">
